@@ -1,0 +1,22 @@
+receivers:
+  restapi:
+    collection_interval: 10s
+    endpoint: localhost:10000
+    auth_token: testtoken
+
+exporters:
+  file:
+    path: collected_metrics.json
+  logging:
+
+
+processors:
+  batch:
+
+service:
+  pipelines:
+    metrics:
+      receivers: [restapi]
+#      processors: [batch]
+      exporters: [logging, file]
+

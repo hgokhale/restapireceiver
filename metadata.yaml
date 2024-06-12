@@ -1,0 +1,17 @@
+type: restapi
+
+scope_name: otelcol/restapireceiver
+
+status:
+  class: receiver
+  stability:
+    development: [metrics]
+  distributions: [contrib]
+  codeowners:
+    active: [hgokhale]
+
+tests:
+  config:
+    endpoint: "localhost:10000"
+    auth_token: "test_token"
+    collection_interval: 10s
