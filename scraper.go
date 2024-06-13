@@ -2,6 +2,7 @@ package restapireceiver
 
 import (
 	"context"
+	"fmt"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -12,6 +13,7 @@ import (
 
 // restapiScraper handle scraping of metrics
 type restapiScraper struct {
+	client    *HttpClientHelper
 	logger    *zap.Logger
 	cfg       *Config
 	settings  receiver.CreateSettings
@@ -60,85 +62,51 @@ func getDummyMetrics() pmetric.Metrics {
 	var node1usage, node2usage int64 = 67 * 1024 * 1024, 25 * 1024 * 1024 // in kb
 	clusterusage := node1usage + node2usage
 
-	timestamp := pcommon.NewTimestampFromTime(time.Now().UTC())
+	timestamp := time.Now().UTC()
 
-	metrics := pmetric.NewMetrics()
+	builder := NewMetricsBuilder()
 
 	// create cluster
-	clusterResourceMetrics := metrics.ResourceMetrics().AppendEmpty()
-	clusterResourceMetrics.Resource().Attributes().PutStr(attr_cluster_name, clusterName)
-	clusterScopeMetrics := clusterResourceMetrics.ScopeMetrics().AppendEmpty()
-	clusterScopeMetrics.Scope().SetName(scope_name)
-	clusterScopeMetrics.Scope().SetVersion(scope_version)
+	clusterAttrs := map[string]any{
+		attr_cluster_name: clusterName,
+	}
+	clusterRb, err := builder.GetOrCreateResource(clusterAttrs, scope_name, scope_version)
+	if err != nil {
+		fmt.Printf("failed to create cluster: %v", err.Error())
+	} else {
+		// add cluster metrics
+		clusterRb.AddGaugeMetricInt(total_capacity_metric_name, unit_kilo_bytes, clustercapacity, timestamp)
+		clusterRb.AddGaugeMetricInt(used_capacity_metric_name, unit_kilo_bytes, clusterusage, timestamp)
+	}
+	// create node1
+	node1attrs := map[string]any{
+		attr_cluster_name: clusterName,
+		attr_node_name:    node1Name,
+		attr_ip:           node1IP,
+	}
+	node1Rb, err := builder.GetOrCreateResource(node1attrs, scope_name, scope_version)
+	if err != nil {
+		fmt.Printf("failed to create node1: %v", err.Error())
+	} else {
+		// add node1 metrics
+		node1Rb.AddGaugeMetricInt(total_capacity_metric_name, unit_kilo_bytes, node1capacity, timestamp)
+		node1Rb.AddGaugeMetricInt(used_capacity_metric_name, unit_kilo_bytes, node1usage, timestamp)
+	}
 
 	// create node1
-	node1ResourceMetrics := metrics.ResourceMetrics().AppendEmpty()
-	node1ResourceMetrics.Resource().Attributes().PutStr(attr_cluster_name, clusterName)
-	node1ResourceMetrics.Resource().Attributes().PutStr(attr_node_name, node1Name)
-	node1ResourceMetrics.Resource().Attributes().PutStr(attr_ip, node1IP)
-	node1ScopeMetrics := node1ResourceMetrics.ScopeMetrics().AppendEmpty()
-	node1ScopeMetrics.Scope().SetName("otelcol/restapireceiver")
-	node1ScopeMetrics.Scope().SetVersion("0.0.1")
+	node2attrs := map[string]any{
+		attr_cluster_name: clusterName,
+		attr_node_name:    node2Name,
+		attr_ip:           node2IP,
+	}
+	node2Rb, err := builder.GetOrCreateResource(node2attrs, scope_name, scope_version)
+	if err != nil {
+		fmt.Printf("failed to create node2: %v", err.Error())
+	} else {
+		// add node1 metrics
+		node2Rb.AddGaugeMetricInt(total_capacity_metric_name, unit_kilo_bytes, node2capacity, timestamp)
+		node2Rb.AddGaugeMetricInt(used_capacity_metric_name, unit_kilo_bytes, node2usage, timestamp)
+	}
 
-	// create node2
-	node2ResourceMetrics := metrics.ResourceMetrics().AppendEmpty()
-	node2ResourceMetrics.Resource().Attributes().PutStr(attr_cluster_name, clusterName)
-	node2ResourceMetrics.Resource().Attributes().PutStr(attr_node_name, node2Name)
-	node2ResourceMetrics.Resource().Attributes().PutStr(attr_ip, node2IP)
-	node2ScopeMetrics := node2ResourceMetrics.ScopeMetrics().AppendEmpty()
-	node2ScopeMetrics.Scope().SetName("otelcol/restapireceiver")
-	node2ScopeMetrics.Scope().SetVersion("0.0.1")
-
-	// add cluster metrics
-	newMetric := clusterScopeMetrics.Metrics().AppendEmpty()
-	newMetric.SetName(total_capacity_metric_name)
-	newMetric.SetUnit(unit_kilo_bytes)
-	newMetric.SetEmptyGauge()
-	dp := newMetric.Gauge().DataPoints().AppendEmpty()
-	dp.SetIntValue(clustercapacity)
-	dp.SetTimestamp(timestamp)
-
-	newMetric = clusterScopeMetrics.Metrics().AppendEmpty()
-	newMetric.SetName(used_capacity_metric_name)
-	newMetric.SetUnit(unit_kilo_bytes)
-	newMetric.SetEmptyGauge()
-	dp = newMetric.Gauge().DataPoints().AppendEmpty()
-	dp.SetIntValue(clusterusage)
-	dp.SetTimestamp(timestamp)
-
-	// add node1 metrics
-	newMetric = node1ScopeMetrics.Metrics().AppendEmpty()
-	newMetric.SetName(total_capacity_metric_name)
-	newMetric.SetUnit(unit_kilo_bytes)
-	newMetric.SetEmptyGauge()
-	dp = newMetric.Gauge().DataPoints().AppendEmpty()
-	dp.SetIntValue(node1capacity)
-	dp.SetTimestamp(timestamp)
-
-	newMetric = node1ScopeMetrics.Metrics().AppendEmpty()
-	newMetric.SetName(used_capacity_metric_name)
-	newMetric.SetUnit(unit_kilo_bytes)
-	newMetric.SetEmptyGauge()
-	dp = newMetric.Gauge().DataPoints().AppendEmpty()
-	dp.SetIntValue(node1usage)
-	dp.SetTimestamp(timestamp)
-
-	// add node2 metrics
-	newMetric = node2ScopeMetrics.Metrics().AppendEmpty()
-	newMetric.SetName(total_capacity_metric_name)
-	newMetric.SetUnit(unit_kilo_bytes)
-	newMetric.SetEmptyGauge()
-	dp = newMetric.Gauge().DataPoints().AppendEmpty()
-	dp.SetIntValue(node2capacity)
-	dp.SetTimestamp(timestamp)
-
-	newMetric = node2ScopeMetrics.Metrics().AppendEmpty()
-	newMetric.SetName(used_capacity_metric_name)
-	newMetric.SetUnit(unit_kilo_bytes)
-	newMetric.SetEmptyGauge()
-	dp = newMetric.Gauge().DataPoints().AppendEmpty()
-	dp.SetIntValue(node2usage)
-	dp.SetTimestamp(timestamp)
-
-	return metrics
+	return builder.GetMetrics()
 }
